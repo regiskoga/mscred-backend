@@ -1,0 +1,55 @@
+import { FastifyReply, FastifyRequest } from 'fastify';
+import { prisma } from '../../lib/prisma';
+import { z } from 'zod';
+
+export async function getAllProducts(request: FastifyRequest, reply: FastifyReply) {
+    const products = await prisma.product.findMany({ where: { active: true } });
+    return reply.send({ products });
+}
+
+export async function getAllOperationTypes(request: FastifyRequest, reply: FastifyReply) {
+    const types = await prisma.operationType.findMany({ where: { active: true } });
+    return reply.send({ operationTypes: types });
+}
+
+export async function getAllAttendanceStatuses(request: FastifyRequest, reply: FastifyReply) {
+    const statuses = await prisma.attendanceStatus.findMany({ where: { active: true } });
+    return reply.send({ attendanceStatuses: statuses });
+}
+
+export async function getAllSalesChannels(request: FastifyRequest, reply: FastifyReply) {
+    const channels = await prisma.salesChannel.findMany({ where: { active: true } });
+    return reply.send({ salesChannels: channels });
+}
+
+// Controller genérico para Admins criarem novas opções em catálogos dinâmicos
+export async function createCatalogItem(request: FastifyRequest, reply: FastifyReply) {
+    const paramsSchema = z.object({
+        type: z.enum(['products', 'operation_types', 'attendance_statuses', 'sales_channels'])
+    });
+    const bodySchema = z.object({
+        name: z.string().min(2)
+    });
+
+    const { type } = paramsSchema.parse(request.params);
+    const { name } = bodySchema.parse(request.body);
+
+    let createdRecord;
+    // Map of Prisma delegates dynamically
+    switch (type) {
+        case 'products':
+            createdRecord = await prisma.product.create({ data: { name } });
+            break;
+        case 'operation_types':
+            createdRecord = await prisma.operationType.create({ data: { name } });
+            break;
+        case 'attendance_statuses':
+            createdRecord = await prisma.attendanceStatus.create({ data: { name } });
+            break;
+        case 'sales_channels':
+            createdRecord = await prisma.salesChannel.create({ data: { name } });
+            break;
+    }
+
+    return reply.status(201).send({ message: 'Item cadastrado com sucesso', data: createdRecord });
+}

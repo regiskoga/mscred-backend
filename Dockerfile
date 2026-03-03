@@ -1,0 +1,46 @@
+# Multi-stage Dockerfile blindado seguindo diretrizes SecOps
+# Stage 1: Build
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+# Copiando apenas dependências para cache
+COPY package.json package-lock.json* ./
+RUN export NODE_ENV=development && npm install --include=dev
+
+# Copiando código fonte e prisma schema
+COPY . .
+# Geração do cliente Prisma e compilação do TypeScript
+RUN export NODE_ENV=development && npx prisma generate
+RUN export NODE_ENV=development && npm run build
+
+# Stage 2: Produção (Imagem menor e mais segura)
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Definindo ambiente de produção
+ENV NODE_ENV=production
+
+# Criar e alterar para usuário sem privilégios (Zero-Trust)
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Copiar os arquivos compilados e dependências necessárias do builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/prisma ./prisma
+
+# Mudar o proprietário dos arquivos para o appuser
+RUN chown -R appuser:appgroup /app
+
+# Switch to the non-root user
+USER appuser
+
+EXPOSE 3333
+
+# Adicionando healthcheck para o orquestrador (Coolify)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3333/api/health || exit 1
+
+# Comando de execução
+CMD ["npm", "start"]
