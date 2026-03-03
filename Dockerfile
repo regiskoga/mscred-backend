@@ -2,6 +2,9 @@
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
+# Instalar OpenSSL para o Prisma Client nativo no Alpine
+RUN apk update && apk add --no-cache openssl
+
 WORKDIR /app
 # Copiando apenas dependências para cache
 COPY package.json package-lock.json* ./
@@ -15,6 +18,9 @@ RUN export NODE_ENV=development && npm run build
 
 # Stage 2: Produção (Imagem menor e mais segura)
 FROM node:20-alpine AS runner
+
+# Instalar OpenSSL para o ambiente de produção rodar o Query Engine do Prisma
+RUN apk update && apk add --no-cache openssl
 
 WORKDIR /app
 
