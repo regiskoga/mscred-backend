@@ -215,6 +215,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             }
 
             let final_date = new Date();
+            let date_is_valid = true;
             if (date_str) {
                 if (date_str.includes('/')) {
                     const parts = date_str.split('/');
@@ -225,10 +226,19 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                     if (year < 100) year += 2000;
                     const parsed = new Date(year, month, day);
                     if (!isNaN(parsed.getTime())) final_date = parsed;
+                    else date_is_valid = false;
                 } else {
                     const parsed = new Date(date_str);
                     if (!isNaN(parsed.getTime())) final_date = parsed;
+                    else date_is_valid = false;
                 }
+            }
+
+            const year = final_date.getFullYear();
+            if (!date_is_valid || year < 1900 || year > 2100) {
+                stats.errors++;
+                stats.errorDetails.push(`Linha ${i + 1} (${customer_name}): Data inválida ou ano absurdo detectado (${date_str}). Corrija a data na planilha.`);
+                continue;
             }
 
             try {
