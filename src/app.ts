@@ -52,4 +52,4 @@ app.register(usersRoutes, { prefix: '/api' });
 app.register(catalogsRoutes, { prefix: '/api' });
 app.register(storesRoutes, { prefix: '/api' });
 app.register(attendancesRoutes, { prefix: '/api' });
-
+app.register(import('./http/routes/profile.routes').then(m => m.profileRoutes), { prefix: '/api' });

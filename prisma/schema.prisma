@@ -91,6 +91,10 @@ model User {
   store_id      Int?
   store         Store?       @relation(fields: [store_id], references: [id])
   
+  avatar_url    String?      @db.Text
+  phone         String?
+  address       String?
+
   deleted_at    DateTime?    // Soft delete (Zero-Trust Auditing requirement)
   created_at    DateTime     @default(now())
   updated_at    DateTime     @updatedAt
