@@ -106,24 +106,36 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
         // Normalize Headers (lowercase, no accents)
         const normalize = (str: string) => str.trim().replace(/^"|"$/g, '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const headers = rows[0].map(normalize);
 
-        // Find indices ignoring uppercase and accents
-        const getColIndex = (possibleNames: string[]) => {
-            return headers.findIndex(h => possibleNames.some(name => h.includes(normalize(name))));
-        };
+        let headerRowIndex = -1;
+        let idxName = -1, idxCpf = -1, idxDate = -1, idxProduct = -1, idxType = -1, idxStatus = -1, idxChannel = -1, idxCity = -1, idxBank = -1;
 
-        const idxName = getColIndex(['nome', 'cliente', 'customer']);
-        const idxCpf = getColIndex(['cpf', 'documento']);
-        const idxDate = getColIndex(['data', 'date']);
-        const idxProduct = getColIndex(['produto', 'product']);
-        const idxType = getColIndex(['tipo', 'operacao', 'type']);
-        const idxStatus = getColIndex(['status', 'situacao']);
-        const idxChannel = getColIndex(['canal', 'channel']);
-        const idxCity = getColIndex(['cidade', 'city', 'local']);
-        const idxBank = getColIndex(['banco', 'bank', 'origem']);
+        for (let i = 0; i < Math.min(rows.length, 100); i++) {
+            const currentHeaders = rows[i].map(normalize);
 
-        if (idxName === -1 || idxCpf === -1) {
+            const getColIndex = (possibleNames: string[]) => {
+                return currentHeaders.findIndex(h => possibleNames.some(name => h.includes(normalize(name))));
+            };
+
+            const tempIdxName = getColIndex(['nome', 'cliente', 'customer']);
+            const tempIdxCpf = getColIndex(['cpf', 'documento']);
+
+            if (tempIdxName !== -1 && tempIdxCpf !== -1) {
+                headerRowIndex = i;
+                idxName = tempIdxName;
+                idxCpf = tempIdxCpf;
+                idxDate = getColIndex(['data', 'date']);
+                idxProduct = getColIndex(['produto', 'product']);
+                idxType = getColIndex(['tipo', 'operacao', 'type']);
+                idxStatus = getColIndex(['status', 'situacao']);
+                idxChannel = getColIndex(['canal', 'channel']);
+                idxCity = getColIndex(['cidade', 'city', 'local']);
+                idxBank = getColIndex(['banco', 'bank', 'origem']);
+                break;
+            }
+        }
+
+        if (headerRowIndex === -1) {
             return reply.status(400).send({ message: 'Colunas obrigatórias não encontradas (Nome e CPF). Verifique o cabeçalho da planilha.' });
         }
 
@@ -133,7 +145,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
         const statuses = await prisma.attendanceStatus.findMany({ select: { id: true, name: true } });
         const channels = await prisma.salesChannel.findMany({ select: { id: true, name: true } });
 
-        for (let i = 1; i < rows.length; i++) {
+        for (let i = headerRowIndex + 1; i < rows.length; i++) {
             const row = rows[i];
             // Skip totally empty rows
             if (row.every(c => !c.trim())) continue;
