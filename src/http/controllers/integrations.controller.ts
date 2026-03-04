@@ -211,12 +211,29 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 continue;
             }
 
+            let final_date = new Date();
+            if (date_str) {
+                if (date_str.includes('/')) {
+                    const parts = date_str.split('/');
+                    const day = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10) - 1;
+                    const yearPart = parts[2].split(/[ T]/)[0];
+                    let year = parseInt(yearPart, 10);
+                    if (year < 100) year += 2000;
+                    const parsed = new Date(year, month, day);
+                    if (!isNaN(parsed.getTime())) final_date = parsed;
+                } else {
+                    const parsed = new Date(date_str);
+                    if (!isNaN(parsed.getTime())) final_date = parsed;
+                }
+            }
+
             try {
                 await prisma.attendance.create({
                     data: {
                         customer_name,
                         customer_cpf: customer_cpf.replace(/\D/g, ''),
-                        attendance_date: date_str ? new Date(date_str) : new Date(),
+                        attendance_date: final_date,
                         product_id: product.id,
                         operation_type_id: type.id,
                         attendance_status_id: status.id,
