@@ -152,7 +152,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
             const getValue = (idx: number) => idx >= 0 && idx < row.length ? row[idx].trim().replace(/^"|"$/g, '') : '';
 
-            const customer_name = getValue(idxName);
+            const customer_name = getValue(idxName) || 'Não Informado';
             const customer_cpf = getValue(idxCpf);
             const date_str = getValue(idxDate);
             const product_name = getValue(idxProduct);
@@ -162,7 +162,8 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             const city = getValue(idxCity);
             const origin_bank = getValue(idxBank);
 
-            if (!customer_name || !customer_cpf) continue;
+            // Somente bloqueia se o Documento (CPF/CNPJ) estiver em branco!
+            if (!customer_cpf) continue;
 
             // Generate external_id to prevent duplicates (SheetID + RowIndex)
             const external_id = `${user.google_sheet_id}_${i}`;
@@ -174,15 +175,34 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 continue;
             }
 
-            // Find Relations (Case Insensitive Match)
-            const product = products.find(p => p.name.toLowerCase() === product_name?.toLowerCase());
-            const type = types.find(t => t.name.toLowerCase() === type_name?.toLowerCase());
-            const status = statuses.find(s => s.name.toLowerCase() === status_name?.toLowerCase());
-            const channel = channels.find(c => c.name.toLowerCase() === channel_name?.toLowerCase());
+            // Find Relations (Case Insensitive Match) or Create fallback if blank
+            let product = product_name ? products.find(p => p.name.toLowerCase() === product_name.toLowerCase()) : products.find(p => p.name === 'Não Informado');
+            if (!product && !product_name) {
+                product = await prisma.product.create({ data: { name: 'Não Informado' } });
+                products.push(product);
+            }
+
+            let type = type_name ? types.find(t => t.name.toLowerCase() === type_name.toLowerCase()) : types.find(t => t.name === 'Não Informado');
+            if (!type && !type_name) {
+                type = await prisma.operationType.create({ data: { name: 'Não Informado' } });
+                types.push(type);
+            }
+
+            let status = status_name ? statuses.find(s => s.name.toLowerCase() === status_name.toLowerCase()) : statuses.find(s => s.name === 'Não Informado');
+            if (!status && !status_name) {
+                status = await prisma.attendanceStatus.create({ data: { name: 'Não Informado' } });
+                statuses.push(status);
+            }
+
+            let channel = channel_name ? channels.find(c => c.name.toLowerCase() === channel_name.toLowerCase()) : channels.find(c => c.name === 'Não Informado');
+            if (!channel && !channel_name) {
+                channel = await prisma.salesChannel.create({ data: { name: 'Não Informado' } });
+                channels.push(channel);
+            }
 
             if (!product || !type || !status || !channel) {
                 stats.errors++;
-                let missingMssg = `Linha ${i + 1} (${customer_name}): Falha ao mapear catálogos. `;
+                let missingMssg = `Linha ${i + 1} (${customer_name}): Falha ao mapear catálogos porque eles não existem no sistema. `;
                 if (!product) missingMssg += `Produto "${product_name}" não encontrado. `;
                 if (!type) missingMssg += `Tipo "${type_name}" não encontrado. `;
                 if (!status) missingMssg += `Status "${status_name}" não encontrado. `;
