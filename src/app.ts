@@ -9,6 +9,7 @@ import { storesRoutes } from './http/routes/stores.routes';
 import { attendancesRoutes } from './http/routes/attendances.routes';
 import { profileRoutes } from './http/routes/profile.routes';
 import { holidayRoutes } from './http/controllers/holidays/routes';
+import { integrationsRoutes } from './http/routes/integrations.routes';
 
 export const app = fastify({
     logger: true, // JSON Logger (Struktured) conforme GLOBAL_GUIDELINES
@@ -56,3 +57,4 @@ app.register(storesRoutes, { prefix: '/api' });
 app.register(attendancesRoutes, { prefix: '/api' });
 app.register(profileRoutes, { prefix: '/api' });
 app.register(holidayRoutes, { prefix: '/api' });
+app.register(integrationsRoutes, { prefix: '/api' });
