@@ -65,6 +65,17 @@ model Role {
   @@map("roles")
 }
 
+model Holiday {
+  id          Int      @id @default(autoincrement())
+  name        String
+  date        DateTime @db.Date
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  
+  @@unique([date])
+  @@map("holidays")
+}
+
 // -----------------------------------------------------------------------
 // 2. ENTIDADES ORGANIZACIONAIS
 // -----------------------------------------------------------------------
