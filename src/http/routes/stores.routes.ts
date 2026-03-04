@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { createStore, listStores } from '../controllers/stores.controller';
+import { createStore, listStores, updateStore } from '../controllers/stores.controller';
 import { verifyJWT } from '../middlewares/verify-jwt';
 import { verifyUserRole } from '../middlewares/verify-user-role';
 
@@ -12,5 +12,12 @@ export async function storesRoutes(app: FastifyInstance) {
         '/stores',
         { onRequest: [verifyJWT, verifyUserRole('ADMIN')] },
         createStore
+    );
+
+    // Atualização de Lojas
+    app.put(
+        '/stores/:id',
+        { onRequest: [verifyJWT, verifyUserRole('ADMIN')] },
+        updateStore
     );
 }

@@ -42,3 +42,34 @@ export async function listStores(request: FastifyRequest, reply: FastifyReply) {
 
     return reply.send({ stores });
 }
+
+export async function updateStore(request: FastifyRequest, reply: FastifyReply) {
+    const updateStoreParamsSchema = z.object({ id: z.coerce.number() });
+    const updateStoreBodySchema = z.object({
+        name: z.string().min(3).optional(),
+        address: z.string().optional(),
+        bmg_code: z.string().optional(),
+    });
+
+    const { id } = updateStoreParamsSchema.parse(request.params);
+    const { name, address, bmg_code } = updateStoreBodySchema.parse(request.body);
+
+    const storeExists = await prisma.store.findUnique({ where: { id } });
+    if (!storeExists) {
+        return reply.status(404).send({ message: 'Loja não encontrada.' });
+    }
+
+    if (bmg_code && bmg_code !== storeExists.bmg_code) {
+        const bmgExists = await prisma.store.findFirst({ where: { bmg_code } });
+        if (bmgExists) {
+            return reply.status(409).send({ message: 'Código BMG da Loja já está em uso por outra unidade.' });
+        }
+    }
+
+    const store = await prisma.store.update({
+        where: { id },
+        data: { name, address, bmg_code },
+    });
+
+    return reply.status(200).send({ store });
+}
