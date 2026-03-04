@@ -51,5 +51,5 @@ EXPOSE 3333
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3333/api/health || exit 1
 
-# Comando de execução
-CMD ["npm", "start"]
+# Comando de execução: Roda migrações pendentes, semeia o banco (upsert) e inicia o servidor
+CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && npm start"]
