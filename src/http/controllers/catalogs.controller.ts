@@ -53,3 +53,65 @@ export async function createCatalogItem(request: FastifyRequest, reply: FastifyR
 
     return reply.status(201).send({ message: 'Item cadastrado com sucesso', data: createdRecord });
 }
+
+export async function updateCatalogItem(request: FastifyRequest, reply: FastifyReply) {
+    const paramsSchema = z.object({
+        type: z.enum(['products', 'operation_types', 'attendance_statuses', 'sales_channels']),
+        id: z.coerce.number()
+    });
+    const bodySchema = z.object({
+        name: z.string().min(2)
+    });
+
+    const { type, id } = paramsSchema.parse(request.params);
+    const { name } = bodySchema.parse(request.body);
+
+    let updatedRecord;
+    switch (type) {
+        case 'products':
+            updatedRecord = await prisma.product.update({ where: { id }, data: { name } });
+            break;
+        case 'operation_types':
+            updatedRecord = await prisma.operationType.update({ where: { id }, data: { name } });
+            break;
+        case 'attendance_statuses':
+            updatedRecord = await prisma.attendanceStatus.update({ where: { id }, data: { name } });
+            break;
+        case 'sales_channels':
+            updatedRecord = await prisma.salesChannel.update({ where: { id }, data: { name } });
+            break;
+    }
+
+    return reply.status(200).send({ message: 'Item atualizado com sucesso', data: updatedRecord });
+}
+
+export async function toggleCatalogItemStatus(request: FastifyRequest, reply: FastifyReply) {
+    const paramsSchema = z.object({
+        type: z.enum(['products', 'operation_types', 'attendance_statuses', 'sales_channels']),
+        id: z.coerce.number()
+    });
+    const bodySchema = z.object({
+        active: z.boolean()
+    });
+
+    const { type, id } = paramsSchema.parse(request.params);
+    const { active } = bodySchema.parse(request.body);
+
+    let updatedRecord;
+    switch (type) {
+        case 'products':
+            updatedRecord = await prisma.product.update({ where: { id }, data: { active } });
+            break;
+        case 'operation_types':
+            updatedRecord = await prisma.operationType.update({ where: { id }, data: { active } });
+            break;
+        case 'attendance_statuses':
+            updatedRecord = await prisma.attendanceStatus.update({ where: { id }, data: { active } });
+            break;
+        case 'sales_channels':
+            updatedRecord = await prisma.salesChannel.update({ where: { id }, data: { active } });
+            break;
+    }
+
+    return reply.status(200).send({ message: `Status alterado para ${active ? 'Ativo' : 'Inativo'}`, data: updatedRecord });
+}

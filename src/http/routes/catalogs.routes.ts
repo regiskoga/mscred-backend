@@ -5,6 +5,8 @@ import {
     getAllAttendanceStatuses,
     getAllSalesChannels,
     createCatalogItem,
+    updateCatalogItem,
+    toggleCatalogItemStatus
 } from '../controllers/catalogs.controller';
 import { verifyJWT } from '../middlewares/verify-jwt';
 import { verifyUserRole } from '../middlewares/verify-user-role';
@@ -21,5 +23,17 @@ export async function catalogsRoutes(app: FastifyInstance) {
         '/catalogs/:type',
         { onRequest: [verifyJWT, verifyUserRole('ADMIN')] },
         createCatalogItem
+    );
+
+    app.put(
+        '/catalogs/:type/:id',
+        { onRequest: [verifyJWT, verifyUserRole('ADMIN')] },
+        updateCatalogItem
+    );
+
+    app.patch(
+        '/catalogs/:type/:id/toggle',
+        { onRequest: [verifyJWT, verifyUserRole('ADMIN')] },
+        toggleCatalogItemStatus
     );
 }
