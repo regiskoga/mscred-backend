@@ -11,7 +11,9 @@ COPY package.json package-lock.json* ./
 RUN export NODE_ENV=development && npm install --include=dev
 
 # Copiando código fonte e prisma schema
+# Corrigindo permissões para execução do Prisma Generate no builder
 COPY . .
+RUN chmod +x ./node_modules/.bin/prisma
 # Geração do cliente Prisma e compilação do TypeScript
 RUN export NODE_ENV=development && npx prisma generate
 RUN export NODE_ENV=development && npm run build
