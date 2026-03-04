@@ -14,7 +14,7 @@ export async function createStore(request: FastifyRequest, reply: FastifyReply) 
     if (bmg_code) {
         const storeExists = await prisma.store.findUnique({ where: { bmg_code } });
         if (storeExists) {
-            return reply.status(409).send({ message: 'Código BMG da Loja já está em uso.' });
+            return reply.status(409).send({ message: 'Código MSCRED da Loja já está em uso.' });
         }
     }
 
@@ -62,7 +62,7 @@ export async function updateStore(request: FastifyRequest, reply: FastifyReply) 
     if (bmg_code && bmg_code !== storeExists.bmg_code) {
         const bmgExists = await prisma.store.findFirst({ where: { bmg_code } });
         if (bmgExists) {
-            return reply.status(409).send({ message: 'Código BMG da Loja já está em uso por outra unidade.' });
+            return reply.status(409).send({ message: 'Código MSCRED da Loja já está em uso por outra unidade.' });
         }
     }
 
