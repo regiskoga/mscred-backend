@@ -70,16 +70,62 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             throw new Error(`Falha ao buscar planilha: ${response.statusText}`);
         }
 
+        // Simple CSV parser handling quotes
         const csvData = await response.text();
-        const rows = csvData.split('\n').map(row => row.split(','));
+        const rows: string[][] = [];
+        let currentRow: string[] = [];
+        let curVal = '';
+        let inQuotes = false;
 
-        // Header Check (Basic validation)
-        // Expected columns: Nome, CPF, Data, Produto, Tipo, Status, Canal, Cidade, Banco
+        for (let i = 0; i < csvData.length; i++) {
+            const char = csvData[i];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                currentRow.push(curVal);
+                curVal = '';
+            } else if (char === '\n' && !inQuotes) {
+                currentRow.push(curVal);
+                rows.push(currentRow);
+                currentRow = [];
+                curVal = '';
+            } else if (char !== '\r') {
+                curVal += char;
+            }
+        }
+        if (curVal || currentRow.length > 0) {
+            currentRow.push(curVal);
+            rows.push(currentRow);
+        }
+
         if (rows.length < 2) {
             return reply.status(200).send({ message: 'Planilha vazia ou sem dados para sincronizar.' });
         }
 
-        const stats = { created: 0, skipped: 0, errors: 0 };
+        const stats = { created: 0, skipped: 0, errors: 0, errorDetails: [] as string[] };
+
+        // Normalize Headers (lowercase, no accents)
+        const normalize = (str: string) => str.trim().replace(/^"|"$/g, '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const headers = rows[0].map(normalize);
+
+        // Find indices ignoring uppercase and accents
+        const getColIndex = (possibleNames: string[]) => {
+            return headers.findIndex(h => possibleNames.some(name => h.includes(normalize(name))));
+        };
+
+        const idxName = getColIndex(['nome', 'cliente', 'customer']);
+        const idxCpf = getColIndex(['cpf', 'documento']);
+        const idxDate = getColIndex(['data', 'date']);
+        const idxProduct = getColIndex(['produto', 'product']);
+        const idxType = getColIndex(['tipo', 'operacao', 'type']);
+        const idxStatus = getColIndex(['status', 'situacao']);
+        const idxChannel = getColIndex(['canal', 'channel']);
+        const idxCity = getColIndex(['cidade', 'city', 'local']);
+        const idxBank = getColIndex(['banco', 'bank', 'origem']);
+
+        if (idxName === -1 || idxCpf === -1) {
+            return reply.status(400).send({ message: 'Colunas obrigatórias não encontradas (Nome e CPF). Verifique o cabeçalho da planilha.' });
+        }
 
         // Prefetch relations for performance
         const products = await prisma.product.findMany({ select: { id: true, name: true } });
@@ -89,9 +135,20 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
-            if (row.length < 9) continue; // Skip malformed rows
+            // Skip totally empty rows
+            if (row.every(c => !c.trim())) continue;
 
-            const [customer_name, customer_cpf, date_str, product_name, type_name, status_name, channel_name, city, origin_bank] = row.map(s => s?.trim().replace(/^"|"$/g, ''));
+            const getValue = (idx: number) => idx >= 0 && idx < row.length ? row[idx].trim().replace(/^"|"$/g, '') : '';
+
+            const customer_name = getValue(idxName);
+            const customer_cpf = getValue(idxCpf);
+            const date_str = getValue(idxDate);
+            const product_name = getValue(idxProduct);
+            const type_name = getValue(idxType);
+            const status_name = getValue(idxStatus);
+            const channel_name = getValue(idxChannel);
+            const city = getValue(idxCity);
+            const origin_bank = getValue(idxBank);
 
             if (!customer_name || !customer_cpf) continue;
 
@@ -113,6 +170,12 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
             if (!product || !type || !status || !channel) {
                 stats.errors++;
+                let missingMssg = `Linha ${i + 1} (${customer_name}): Falha ao mapear catálogos. `;
+                if (!product) missingMssg += `Produto "${product_name}" não encontrado. `;
+                if (!type) missingMssg += `Tipo "${type_name}" não encontrado. `;
+                if (!status) missingMssg += `Status "${status_name}" não encontrado. `;
+                if (!channel) missingMssg += `Canal "${channel_name}" não encontrado. `;
+                stats.errorDetails.push(missingMssg);
                 continue;
             }
 
@@ -121,7 +184,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                     data: {
                         customer_name,
                         customer_cpf: customer_cpf.replace(/\D/g, ''),
-                        attendance_date: new Date(date_str || new Date()),
+                        attendance_date: date_str ? new Date(date_str) : new Date(),
                         product_id: product.id,
                         operation_type_id: type.id,
                         attendance_status_id: status.id,
@@ -134,8 +197,9 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                     },
                 });
                 stats.created++;
-            } catch (err) {
+            } catch (err: any) {
                 stats.errors++;
+                stats.errorDetails.push(`Linha ${i + 1} (${customer_name}): Erro ao salvar no banco (${err.message}).`);
             }
         }
 
@@ -146,7 +210,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 action: 'INSERT',
                 table_name: 'attendances',
                 record_id: 'bulk_sync_google_sheets',
-                new_payload: { user_id, stats },
+                new_payload: { user_id, stats: { created: stats.created, skipped: stats.skipped, errors: stats.errors } },
                 ip_address: request.ip,
             },
         });
