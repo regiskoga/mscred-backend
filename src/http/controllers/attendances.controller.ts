@@ -47,18 +47,39 @@ export async function listAttendances(request: FastifyRequest, reply: FastifyRep
     }
     // Se for ADMIN, o objeto de queryFilter segue vazio == SELECT * da Base toda
 
-    const attendances = await prisma.attendance.findMany({
-        where: queryFilter,
-        include: {
-            product: { select: { name: true } },
-            operation_type: { select: { name: true } },
-            attendance_status: { select: { name: true } },
-            sales_channel: { select: { name: true } },
-            user: { select: { name: true } },
-            store: { select: { name: true } },
-        },
-        orderBy: { attendance_date: 'desc' }
+    const querySchema = z.object({
+        page: z.string().optional().default('1').transform(Number),
+        limit: z.string().optional().default('50').transform(Number),
     });
 
-    return reply.send({ attendances });
+    const { page, limit } = querySchema.parse(request.query);
+    const skip = (page - 1) * limit;
+
+    const [attendances, total] = await Promise.all([
+        prisma.attendance.findMany({
+            where: queryFilter,
+            include: {
+                product: { select: { name: true } },
+                operation_type: { select: { name: true } },
+                attendance_status: { select: { name: true } },
+                sales_channel: { select: { name: true } },
+                user: { select: { name: true } },
+                store: { select: { name: true } },
+            },
+            orderBy: { attendance_date: 'desc' },
+            skip,
+            take: limit
+        }),
+        prisma.attendance.count({ where: queryFilter })
+    ]);
+
+    return reply.send({
+        attendances,
+        meta: {
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        }
+    });
 }
