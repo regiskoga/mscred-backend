@@ -175,26 +175,29 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 continue;
             }
 
-            // Find Relations (Case Insensitive Match) or Create fallback if blank
-            let product = product_name ? products.find(p => p.name.toLowerCase() === product_name.toLowerCase()) : products.find(p => p.name === 'Não Informado');
+            // Normalization helper for catalog matching (ignores case and accents)
+            const n = (str: string) => str ? str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() : '';
+
+            // Find Relations (Case and Accent Insensitive Match) or Create fallback if blank
+            let product = product_name ? products.find(p => n(p.name) === n(product_name)) : products.find(p => p.name === 'Não Informado');
             if (!product && !product_name) {
                 product = await prisma.product.create({ data: { name: 'Não Informado' } });
                 products.push(product);
             }
 
-            let type = type_name ? types.find(t => t.name.toLowerCase() === type_name.toLowerCase()) : types.find(t => t.name === 'Não Informado');
+            let type = type_name ? types.find(t => n(t.name) === n(type_name)) : types.find(t => t.name === 'Não Informado');
             if (!type && !type_name) {
                 type = await prisma.operationType.create({ data: { name: 'Não Informado' } });
                 types.push(type);
             }
 
-            let status = status_name ? statuses.find(s => s.name.toLowerCase() === status_name.toLowerCase()) : statuses.find(s => s.name === 'Não Informado');
+            let status = status_name ? statuses.find(s => n(s.name) === n(status_name)) : statuses.find(s => s.name === 'Não Informado');
             if (!status && !status_name) {
                 status = await prisma.attendanceStatus.create({ data: { name: 'Não Informado' } });
                 statuses.push(status);
             }
 
-            let channel = channel_name ? channels.find(c => c.name.toLowerCase() === channel_name.toLowerCase()) : channels.find(c => c.name === 'Não Informado');
+            let channel = channel_name ? channels.find(c => n(c.name) === n(channel_name)) : channels.find(c => c.name === 'Não Informado');
             if (!channel && !channel_name) {
                 channel = await prisma.salesChannel.create({ data: { name: 'Não Informado' } });
                 channels.push(channel);
