@@ -134,13 +134,22 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 idxChannel = getColIndex(['canal', 'channel']);
                 idxCity = getColIndex(['cidade', 'city', 'local']);
                 idxBank = getColIndex(['banco', 'bank', 'origem']);
-                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto', 'produção', 'producao', 'total', 'r$', 'liberado', 'montante', 'liquido', 'líquido']);
+                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto', 'produção', 'producao', 'total', 'r$', 'liberado', 'montante', 'liquido', 'líquido', 'pago aprovado', 'pago', 'aprovado']);
                 break;
             }
         }
 
         if (headerRowIndex === -1) {
             return reply.status(400).send({ message: 'Colunas obrigatórias não encontradas (Nome e CPF). Verifique o cabeçalho da planilha.' });
+        }
+
+        // Force paid if the value header already indicates payment
+        let forcePaid = false;
+        if (idxValue !== -1) {
+            const valHead = String(rows[headerRowIndex][idxValue]).toLowerCase();
+            if (valHead.includes('pago') || valHead.includes('aprovado') || valHead.includes('liquidado')) {
+                forcePaid = true;
+            }
         }
 
         // Prefetch relations for performance
@@ -170,10 +179,12 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             // Somente bloqueia se o Documento (CPF/CNPJ) estiver em branco!
             if (!customer_cpf) continue;
 
-            let is_paid = false;
-            const sLower = status_name.toLowerCase();
-            if (sLower.includes('pago') || sLower.includes('liquidado') || sLower.includes('aprovado') || sLower.includes('concluido') || sLower.includes('concluído')) {
-                is_paid = true;
+            let is_paid = forcePaid; // Inherit force from value header
+            if (!is_paid) { // Only check status if not already forced to paid
+                const sLower = status_name.toLowerCase();
+                if (sLower.includes('pago') || sLower.includes('liquidado') || sLower.includes('aprovado') || sLower.includes('concluido') || sLower.includes('concluído')) {
+                    is_paid = true;
+                }
             }
 
             let contract_value = 0;
