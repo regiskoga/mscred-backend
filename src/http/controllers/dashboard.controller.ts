@@ -5,7 +5,7 @@ import { z } from 'zod';
 export class DashboardController {
     async getMetrics(request: FastifyRequest, reply: FastifyReply) {
         const dashboardService = new DashboardService();
-        const { sub: userId, store_id: storeId } = request.user as { sub: string, store_id: number | null };
+        const { sub: userId, role, store_id: storeId } = request.user as { sub: string, role: string, store_id: number | null };
 
         const querySchema = z.object({
             month: z.coerce.number().min(1).max(12).optional(),
@@ -16,8 +16,8 @@ export class DashboardController {
         try {
             const [workingDays, financialTotals, goalsProgress] = await Promise.all([
                 dashboardService.getWorkingDaysMetrics(month, year),
-                dashboardService.getFinancialTotals(userId, month, year),
-                dashboardService.getGoalsProgress(userId, storeId, month, year)
+                dashboardService.getFinancialTotals(userId, role, storeId, month, year),
+                dashboardService.getGoalsProgress(userId, role, storeId, month, year)
             ]);
 
             return reply.send({

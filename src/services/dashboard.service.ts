@@ -70,7 +70,7 @@ export class DashboardService {
     /**
      * Busca os totais financeiros (Comissionamento e Contratos Aprovados e Pagos) do mês
      */
-    async getFinancialTotals(userId: string, paramMonth?: number, paramYear?: number) {
+    async getFinancialTotals(userId: string, role: string, storeId: number | null, paramMonth?: number, paramYear?: number) {
         const now = new Date();
         const year = paramYear || now.getFullYear();
         const month = paramMonth ? paramMonth - 1 : now.getMonth();
@@ -78,29 +78,31 @@ export class DashboardService {
         const firstDayOfMonth = new Date(year, month, 1);
         const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
-        // Total de comissões acumuladas do usuário neste mês (seja aprovado ou não, normalmente considera tudo digitado, ou só pago. 
-        // Vamos agrupar os dois e separar no controller caso a regra mude)
+        // RBAC Filter: Definir o escopo da busca
+        const whereClause: any = {
+            attendance_date: {
+                gte: firstDayOfMonth,
+                lte: lastDayOfMonth
+            }
+        };
+
+        if (role === 'OPERADOR') {
+            whereClause.user_id = userId;
+        } else if (role === 'GESTOR' && storeId) {
+            whereClause.store_id = storeId;
+        }
+        // ADMIN não tem filtro adicional, pega tudo.
+
         const comissionAgg = await prisma.attendance.aggregate({
             _sum: { commission_value: true },
-            where: {
-                user_id: userId,
-                attendance_date: {
-                    gte: firstDayOfMonth,
-                    lte: lastDayOfMonth
-                }
-            }
+            where: whereClause
         });
 
-        // Total "Pago Aprovado" é o contract_value dos atendimentos onde paid_approved = true
         const paidApprovedAgg = await prisma.attendance.aggregate({
             _sum: { contract_value: true },
             where: {
-                user_id: userId,
+                ...whereClause,
                 paid_approved: true,
-                attendance_date: {
-                    gte: firstDayOfMonth,
-                    lte: lastDayOfMonth
-                }
             }
         });
 
@@ -119,7 +121,7 @@ export class DashboardService {
     /**
      * Compara as Metas configuradas x as Vendas Realizadas do Consultor no mês
      */
-    async getGoalsProgress(userId: string, storeId: number | null, paramMonth?: number, paramYear?: number) {
+    async getGoalsProgress(userId: string, role: string, storeId: number | null, paramMonth?: number, paramYear?: number) {
         const now = new Date();
         const year = paramYear || now.getFullYear();
         const monthIndex = paramMonth ? paramMonth - 1 : now.getMonth();
@@ -128,8 +130,21 @@ export class DashboardService {
         const firstDayOfMonth = new Date(year, monthIndex, 1);
         const lastDayOfMonth = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
 
-        // 1. Encontrar todas as metas deste mês (Priorizando as específicas deste usuário, depois desta loja, depois global)
-        // Por simplicidade na agregação, trazemos todas que englobam ele e filtramos na memória a prioridade
+        // RBAC Filter para Vendas Realizadas
+        const baseWhere: any = {
+            attendance_date: {
+                gte: firstDayOfMonth,
+                lte: lastDayOfMonth
+            }
+        };
+
+        if (role === 'OPERADOR') {
+            baseWhere.user_id = userId;
+        } else if (role === 'GESTOR' && storeId) {
+            baseWhere.store_id = storeId;
+        }
+
+        // 1. Encontrar todas as metas deste mês (Priorizando as específicas do perfil)
         const allPossibleGoals = await prisma.goal.findMany({
             where: {
                 month: monthDB,
@@ -152,7 +167,6 @@ export class DashboardService {
             if (!existing) {
                 uniqueGoalsByProduct.set(goal.product_id, goal);
             } else {
-                // Se já existe, substitui se a atual for mais "específica"
                 let currentScore = (existing.user_id ? 3 : (existing.store_id ? 2 : 1));
                 let newScore = (goal.user_id ? 3 : (goal.store_id ? 2 : 1));
                 if (newScore > currentScore) {
@@ -163,19 +177,15 @@ export class DashboardService {
 
         const goals = Array.from(uniqueGoalsByProduct.values());
 
-        // 2. Para cada Produto na Meta, somar o que o cara já vendeu (contract_value) no mês
+        // 2. Para cada Produto na Meta, somar o que o foi vendido (conforme escopo)
         const progressResults = [];
 
         for (const goal of goals) {
             const agg = await prisma.attendance.aggregate({
                 _sum: { contract_value: true },
                 where: {
-                    user_id: userId,
+                    ...baseWhere,
                     product_id: goal.product_id,
-                    attendance_date: {
-                        gte: firstDayOfMonth,
-                        lte: lastDayOfMonth
-                    }
                 }
             });
 
