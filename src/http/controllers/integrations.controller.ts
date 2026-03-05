@@ -338,7 +338,8 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
             try {
                 let commission_value = 0;
-                if (contract_value > 0) {
+                // Só calcula comissão se for venda confirmada (Paga)
+                if (contract_value > 0 && is_paid) {
                     commission_value = await commissionEngine.calculateCommission(
                         user.id,
                         product.id,
