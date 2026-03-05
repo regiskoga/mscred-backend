@@ -130,7 +130,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 idxDate = getColIndex(['data', 'date']);
                 idxProduct = getColIndex(['produto', 'product']);
                 idxType = getColIndex(['tipo', 'operacao', 'type']);
-                idxStatus = getColIndex(['status', 'situacao']);
+                idxStatus = getColIndex(['status', 'situacao', 'situação', 'pagamento', 'estado']);
                 idxChannel = getColIndex(['canal', 'channel']);
                 idxCity = getColIndex(['cidade', 'city', 'local']);
                 idxBank = getColIndex(['banco', 'bank', 'origem']);
