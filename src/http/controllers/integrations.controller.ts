@@ -216,20 +216,63 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
             let final_date = new Date();
             let date_is_valid = true;
+
             if (date_str) {
-                if (date_str.includes('/')) {
-                    const parts = date_str.split('/');
-                    const day = parseInt(parts[0], 10);
-                    const month = parseInt(parts[1], 10) - 1;
-                    const yearPart = parts[2].split(/[ T]/)[0];
-                    let year = parseInt(yearPart, 10);
-                    if (year < 100) year += 2000;
-                    const parsed = new Date(year, month, day);
+                const cleanDate = date_str.split(/[ T_]/)[0].trim();
+
+                let year: number | undefined;
+                let month: number | undefined;
+                let day: number | undefined;
+
+                if (cleanDate.includes('/')) {
+                    const parts = cleanDate.split('/');
+                    if (parts.length === 3) {
+                        if (parts[2].length === 4 || parts[2].length === 2) { // DD/MM/YYYY ou MM/DD/YYYY ou DD/MM/YY
+                            year = parseInt(parts[2], 10);
+                            if (year < 100) year += 2000;
+
+                            const p0 = parseInt(parts[0], 10);
+                            const p1 = parseInt(parts[1], 10);
+
+                            if (p0 > 12) {
+                                day = p0; month = p1 - 1;
+                            } else if (p1 > 12) {
+                                month = p0 - 1; day = p1;
+                            } else {
+                                day = p0; month = p1 - 1; // Padrão BR default
+                            }
+                        } else if (parts[0].length === 4) { // YYYY/MM/DD
+                            year = parseInt(parts[0], 10);
+                            month = parseInt(parts[1], 10) - 1;
+                            day = parseInt(parts[2], 10);
+                        }
+                    }
+                } else if (cleanDate.includes('-')) {
+                    const parts = cleanDate.split('-');
+                    if (parts.length === 3) {
+                        if (parts[0].length === 4) { // YYYY-MM-DD
+                            year = parseInt(parts[0], 10);
+                            month = parseInt(parts[1], 10) - 1;
+                            day = parseInt(parts[2], 10);
+                        } else { // DD-MM-YYYY
+                            year = parseInt(parts[2], 10);
+                            if (year < 100) year += 2000;
+                            day = parseInt(parts[0], 10);
+                            month = parseInt(parts[1], 10) - 1;
+                        }
+                    }
+                }
+
+                if (year !== undefined && month !== undefined && day !== undefined) {
+                    // Fixar 12:00 UTC para evitar que a conversão de Fuso Horário Local reduza 1 dia quando exibido no Frontend (BRT)
+                    const parsed = new Date(Date.UTC(year, month, day, 12, 0, 0));
                     if (!isNaN(parsed.getTime())) final_date = parsed;
                     else date_is_valid = false;
                 } else {
                     const parsed = new Date(date_str);
-                    if (!isNaN(parsed.getTime())) final_date = parsed;
+                    if (!isNaN(parsed.getTime())) {
+                        final_date = new Date(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0));
+                    }
                     else date_is_valid = false;
                 }
             }
