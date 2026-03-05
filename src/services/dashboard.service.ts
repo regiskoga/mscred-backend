@@ -112,9 +112,12 @@ export class DashboardService {
         const paidApprovedValue = paidApprovedAgg._sum && (paidApprovedAgg._sum as any).contract_value
             ? (paidApprovedAgg._sum as any).contract_value : 0;
 
+        const totalRecords = await prisma.attendance.count();
+
         return {
             currentCommission: Number(commissionValue.toFixed(2)),
-            paidApproved: Number(paidApprovedValue.toFixed(2))
+            paidApproved: Number(paidApprovedValue.toFixed(2)),
+            totalRecords // Telemetria para depuração
         };
     }
 

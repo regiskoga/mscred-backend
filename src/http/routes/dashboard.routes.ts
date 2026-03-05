@@ -9,5 +9,5 @@ export async function dashboardRoutes(app: FastifyInstance) {
     app.addHook('onRequest', verifyJWT);
 
     // Todos os usuários autenticados podem ver o próprio dashboard, a filtragem de dados é feita via JWT
-    app.get('/dashboard/metrics', { preHandler: [verifyUserRole('OPERADOR')] }, dashboardController.getMetrics);
+    app.get('/dashboard/metrics', dashboardController.getMetrics);
 }
