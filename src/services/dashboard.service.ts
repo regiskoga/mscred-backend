@@ -2,19 +2,29 @@ import { prisma } from '../lib/prisma';
 
 export class DashboardService {
     /**
-     * Calcula os dias úteis totais, decorridos e restantes no mês atual
+     * Calcula os dias úteis totais, decorridos e restantes no mês selecionado
      */
-    async getWorkingDaysMetrics() {
+    async getWorkingDaysMetrics(paramMonth?: number, paramYear?: number) {
         const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
+        const year = paramYear || now.getFullYear();
+        const month = paramMonth ? paramMonth - 1 : now.getMonth();
 
-        // Limites do Mês Atual
+        // Limites do Mês Selecionado
         const firstDayOfMonth = new Date(year, month, 1);
         const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
         // Limite "Hoje" para os Decorridos
-        const today = new Date(year, month, now.getDate(), 23, 59, 59);
+        const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+        const isPastMonth = year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth());
+
+        let today;
+        if (isCurrentMonth) {
+            today = new Date(year, month, now.getDate(), 23, 59, 59);
+        } else if (isPastMonth) {
+            today = lastDayOfMonth;
+        } else {
+            today = new Date(year, month, 1, 0, 0, 0); // No futuro não tem dias decorridos "efetivos" ainda
+        }
 
         // Buscar Feriados do Mês
         const holidays = await prisma.holiday.findMany({
@@ -58,12 +68,15 @@ export class DashboardService {
     }
 
     /**
-     * Busca os totais financeiros (Comissionamento e Contratos Aprovados e Pagos)
+     * Busca os totais financeiros (Comissionamento e Contratos Aprovados e Pagos) do mês
      */
-    async getFinancialTotals(userId: string) {
+    async getFinancialTotals(userId: string, paramMonth?: number, paramYear?: number) {
         const now = new Date();
-        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const year = paramYear || now.getFullYear();
+        const month = paramMonth ? paramMonth - 1 : now.getMonth();
+
+        const firstDayOfMonth = new Date(year, month, 1);
+        const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
         // Total de comissões acumuladas do usuário neste mês (seja aprovado ou não, normalmente considera tudo digitado, ou só pago. 
         // Vamos agrupar os dois e separar no controller caso a regra mude)
@@ -106,19 +119,20 @@ export class DashboardService {
     /**
      * Compara as Metas configuradas x as Vendas Realizadas do Consultor no mês
      */
-    async getGoalsProgress(userId: string, storeId: number | null) {
+    async getGoalsProgress(userId: string, storeId: number | null, paramMonth?: number, paramYear?: number) {
         const now = new Date();
-        const month = now.getMonth() + 1; // Prisma mês = 1 a 12
-        const year = now.getFullYear();
+        const year = paramYear || now.getFullYear();
+        const monthIndex = paramMonth ? paramMonth - 1 : now.getMonth();
+        const monthDB = monthIndex + 1; // Prisma mês = 1 a 12
 
-        const firstDayOfMonth = new Date(year, now.getMonth(), 1);
-        const lastDayOfMonth = new Date(year, now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const firstDayOfMonth = new Date(year, monthIndex, 1);
+        const lastDayOfMonth = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
 
         // 1. Encontrar todas as metas deste mês (Priorizando as específicas deste usuário, depois desta loja, depois global)
         // Por simplicidade na agregação, trazemos todas que englobam ele e filtramos na memória a prioridade
         const allPossibleGoals = await prisma.goal.findMany({
             where: {
-                month,
+                month: monthDB,
                 year,
                 OR: [
                     { user_id: userId },
