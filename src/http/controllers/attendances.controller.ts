@@ -50,6 +50,66 @@ export async function createAttendance(request: FastifyRequest, reply: FastifyRe
     return reply.status(201).send({ attendance });
 }
 
+export async function updateAttendance(request: FastifyRequest, reply: FastifyReply) {
+    const attendanceParamsSchema = z.object({
+        id: z.string().uuid(),
+    });
+
+    const attendanceBodySchema = z.object({
+        customer_name: z.string().min(3),
+        customer_cpf: z.string().length(11),
+        attendance_date: z.string().transform((str) => new Date(str)),
+        product_id: z.number().int(),
+        operation_type_id: z.number().int(),
+        attendance_status_id: z.number().int(),
+        sales_channel_id: z.number().int(),
+        paid_approved: z.boolean().default(false),
+        city: z.string(),
+        origin_bank: z.string().optional().nullable(),
+        contract_value: z.number().min(0).optional().default(0),
+    });
+
+    const { id } = attendanceParamsSchema.parse(request.params);
+    const parsedData = attendanceBodySchema.parse(request.body);
+    const { sub: user_id, role, store_id } = request.user as { sub: string; role: string; store_id: number };
+
+    // Buscar o atendimento para validar permissões
+    const existingAttendance = await prisma.attendance.findUnique({
+        where: { id },
+    });
+
+    if (!existingAttendance) {
+        return reply.status(404).send({ message: 'Atendimento não encontrado.' });
+    }
+
+    // RBAC: Zero-Trust. O operador só mexe no dele. O gestor só mexe nos da sua loja. O Admin mexe em qualquer um.
+    if (role === 'OPERADOR' && existingAttendance.user_id !== user_id) {
+        return reply.status(403).send({ message: 'Você só pode editar os seus próprios atendimentos.' });
+    }
+    if (role === 'GESTOR' && existingAttendance.store_id !== store_id) {
+        return reply.status(403).send({ message: 'Você só pode editar atendimentos de colaboradores da sua loja.' });
+    }
+
+    // Calcular nova comissão caso os dados de valor ou produto tenham mudado
+    const contract_value = parsedData.contract_value || 0;
+    const commission_value = await commissionEngine.calculateCommission(
+        existingAttendance.user_id, // Mantém a comissão vinculada ao usuário original que fez a venda
+        parsedData.product_id,
+        contract_value,
+        parsedData.attendance_date
+    );
+
+    const updatedAttendance = await prisma.attendance.update({
+        where: { id },
+        data: {
+            ...parsedData,
+            commission_value,
+        },
+    });
+
+    return reply.status(200).send({ attendance: updatedAttendance });
+}
+
 export async function listAttendances(request: FastifyRequest, reply: FastifyReply) {
     const { sub: user_id, role, store_id } = request.user as any;
 
