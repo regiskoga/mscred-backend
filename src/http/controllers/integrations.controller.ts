@@ -1,6 +1,9 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
+import { CommissionEngineService } from '../../services/commission-engine.service';
+
+const commissionEngine = new CommissionEngineService();
 
 export async function updateUserSheetId(request: FastifyRequest, reply: FastifyReply) {
     const paramsSchema = z.object({
@@ -108,7 +111,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
         const normalize = (str: string) => str.trim().replace(/^"|"$/g, '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
         let headerRowIndex = -1;
-        let idxName = -1, idxCpf = -1, idxDate = -1, idxProduct = -1, idxType = -1, idxStatus = -1, idxChannel = -1, idxCity = -1, idxBank = -1;
+        let idxName = -1, idxCpf = -1, idxDate = -1, idxProduct = -1, idxType = -1, idxStatus = -1, idxChannel = -1, idxCity = -1, idxBank = -1, idxValue = -1;
 
         for (let i = 0; i < Math.min(rows.length, 100); i++) {
             const currentHeaders = rows[i].map(normalize);
@@ -131,6 +134,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 idxChannel = getColIndex(['canal', 'channel']);
                 idxCity = getColIndex(['cidade', 'city', 'local']);
                 idxBank = getColIndex(['banco', 'bank', 'origem']);
+                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto']);
                 break;
             }
         }
@@ -161,9 +165,29 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             const channel_name = getValue(idxChannel);
             const city = getValue(idxCity);
             const origin_bank = getValue(idxBank);
+            const value_str = getValue(idxValue);
 
             // Somente bloqueia se o Documento (CPF/CNPJ) estiver em branco!
             if (!customer_cpf) continue;
+
+            let is_paid = false;
+            const sLower = status_name.toLowerCase();
+            if (sLower.includes('pago') || sLower.includes('liquidado') || sLower.includes('aprovado') || sLower.includes('concluido') || sLower.includes('concluído')) {
+                is_paid = true;
+            }
+
+            let contract_value = 0;
+            if (value_str) {
+                const cleaned = value_str.replace(/[R$\s]/g, '');
+                if (cleaned.includes(',') && cleaned.includes('.')) {
+                    contract_value = parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
+                } else if (cleaned.includes(',')) {
+                    contract_value = parseFloat(cleaned.replace(',', '.'));
+                } else {
+                    contract_value = parseFloat(cleaned);
+                }
+                if (isNaN(contract_value)) contract_value = 0;
+            }
 
             // Generate external_id to prevent duplicates (SheetID + RowIndex)
             const external_id = `${user.google_sheet_id}_${i}`;
@@ -285,6 +309,16 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             }
 
             try {
+                let commission_value = 0;
+                if (contract_value > 0) {
+                    commission_value = await commissionEngine.calculateCommission(
+                        user.id,
+                        product.id,
+                        contract_value,
+                        final_date
+                    );
+                }
+
                 await prisma.attendance.create({
                     data: {
                         customer_name,
@@ -296,6 +330,9 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                         sales_channel_id: channel.id,
                         city: city || 'Não Informado',
                         origin_bank: origin_bank || null,
+                        paid_approved: is_paid,
+                        contract_value,
+                        commission_value,
                         external_id,
                         user_id: user.id,
                         store_id: user.store_id!,
