@@ -105,7 +105,13 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             return reply.status(200).send({ message: 'Planilha vazia ou sem dados para sincronizar.' });
         }
 
-        const stats = { created: 0, skipped: 0, errors: 0, errorDetails: [] as string[] };
+        const stats = {
+            created: 0,
+            skipped: 0,
+            errors: 0,
+            errorDetails: [] as string[],
+            mappedColumns: {} as any // Telemetria para o usuário
+        };
 
         // Normalize Headers (lowercase, no accents)
         const normalize = (str: string) => str.trim().replace(/^"|"$/g, '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -134,7 +140,17 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 idxChannel = getColIndex(['canal', 'channel']);
                 idxCity = getColIndex(['cidade', 'city', 'local']);
                 idxBank = getColIndex(['banco', 'bank', 'origem']);
-                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto', 'producao', 'montante', 'bruto']);
+                // Expandido com termos comuns em planilhas de crédito/finanças
+                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto', 'producao', 'montante', 'bruto', 'financiado', 'liberado', 'vlr', 'vl', 'principal', 'receita']);
+
+                stats.mappedColumns = {
+                    nome: idxName !== -1,
+                    cpf: idxCpf !== -1,
+                    data: idxDate !== -1,
+                    valor: idxValue !== -1,
+                    status: idxStatus !== -1,
+                    produto: idxProduct !== -1
+                };
                 break;
             }
         }
@@ -178,16 +194,23 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
             let contract_value = 0;
             if (value_str) {
-                // Remove R$, espaços, e converte para número
+                // Remove R$, espaços e normaliza
                 const cleaned = value_str.toUpperCase().replace('R$', '').trim();
-                const numStr = cleaned.replace(/\s+/g, ''); // remove espaços no meio
+                let numStr = cleaned.replace(/\s+/g, ''); // remove espaços no meio
+
                 if (numStr.includes(',') && numStr.includes('.')) {
+                    // Formato 1.500,00 -> 1500.00
                     contract_value = parseFloat(numStr.replace(/\./g, '').replace(',', '.'));
                 } else if (numStr.includes(',')) {
+                    // Formato 1500,00 -> 1500.00
                     contract_value = parseFloat(numStr.replace(',', '.'));
+                } else if (numStr.includes('.') && numStr.split('.').pop()?.length === 3) {
+                    // Caso ambíguo: 1.500 (sem vírgula) -> Pode ser milhar. Se tiver 3 dígitos após o ponto, tratamos como milhar.
+                    contract_value = parseFloat(numStr.replace(/\./g, ''));
                 } else {
                     contract_value = parseFloat(numStr);
                 }
+
                 if (isNaN(contract_value)) contract_value = 0;
             }
 
