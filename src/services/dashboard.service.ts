@@ -343,14 +343,20 @@ export class DashboardService {
         // 3. Transformar para o formato que o gráfico espera (Series)
         // Precisamos dos nomes
         const allProducts = await prisma.product.findMany({ where: { active: true }, select: { id: true, name: true } });
+
+        // FILTRAR APENAS OPERADORES (Role ID 3 costuma ser OPERADOR, mas vamos buscar pelo nome pra ser Seguro)
+        const operatorRole = await prisma.role.findFirst({ where: { name: 'OPERADOR' } });
+
         const allUsers = await prisma.user.findMany({
             where: {
                 deleted_at: null,
+                role_id: operatorRole?.id, // FILTRO SOLICITADO: APENAS OPERADORES
                 ...(baseWhere.store_id ? { store_id: baseWhere.store_id } : {})
             },
             select: { id: true, name: true }
         });
 
+        // 4. Mapear evolução de produtos e identificar os que tem dados
         const productEvolution = monthsData.map(m => {
             const entry: any = { month: m.month };
             allProducts.forEach(p => {
@@ -360,6 +366,12 @@ export class DashboardService {
             return entry;
         });
 
+        // Limpeza: Manter apenas produtos que tiveram pelo menos uma venda no período de 6 meses
+        const activeProductNames = allProducts
+            .filter(p => productEvolution.some(entry => entry[p.name] > 0))
+            .map(p => p.name);
+
+        // 5. Mapear evolução de consultores e identificar os que tem dados
         const consultantEvolution = monthsData.map(m => {
             const entry: any = { month: m.month };
             allUsers.forEach(u => {
@@ -369,11 +381,16 @@ export class DashboardService {
             return entry;
         });
 
+        // Limpeza: Manter apenas consultores que tiveram pelo menos uma venda no período
+        const activeConsultantNames = allUsers
+            .filter(u => consultantEvolution.some(entry => entry[u.name] > 0))
+            .map(u => u.name);
+
         return {
             products: productEvolution,
             consultants: consultantEvolution,
-            productNames: allProducts.map(p => p.name),
-            consultantNames: allUsers.map(u => u.name)
+            productNames: activeProductNames,
+            consultantNames: activeConsultantNames
         };
     }
 }
