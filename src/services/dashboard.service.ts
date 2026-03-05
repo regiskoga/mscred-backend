@@ -284,4 +284,96 @@ export class DashboardService {
         // Ordenar por valor total (ou nome)
         return result.sort((a, b) => b.totalValue - a.totalValue);
     }
+
+    /**
+     * Retorna a evolução mensal dos últimos 6 meses por Produto e por Colaborador
+     */
+    async getMonthlyEvolution(userId: string, role: string, storeId: number | null, targetStoreId?: number) {
+        // Apenas Admin e Gestor podem ver evolução. Operator não solicitou (vê o dele?) 
+        // Mas a regra diz: "Admin vê tudo, Gestor vê a loja"
+        if (role === 'OPERADOR') return { products: [], consultants: [] };
+
+        const monthsData = [];
+        const now = new Date();
+
+        // 1. Definir o escopo da busca
+        const baseWhere: any = { paid_approved: true };
+        if (targetStoreId) {
+            baseWhere.store_id = targetStoreId;
+        } else if (role === 'GESTOR' && storeId) {
+            baseWhere.store_id = storeId;
+        }
+
+        // 2. Coletar dados dos últimos 6 meses
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const first = new Date(d.getFullYear(), d.getMonth(), 1);
+            const last = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+            const monthLabel = d.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+
+            // Vendas por Produto neste mês
+            const productSales = await prisma.attendance.groupBy({
+                by: ['product_id'],
+                _sum: { contract_value: true },
+                where: {
+                    ...baseWhere,
+                    attendance_date: { gte: first, lte: last }
+                }
+            });
+
+            // Vendas por Consultor neste mês
+            const consultantSales = await prisma.attendance.groupBy({
+                by: ['user_id'],
+                _sum: { contract_value: true },
+                where: {
+                    ...baseWhere,
+                    attendance_date: { gte: first, lte: last }
+                }
+            });
+
+            monthsData.push({
+                month: monthLabel,
+                year: d.getFullYear(),
+                monthIndex: d.getMonth() + 1,
+                productSales,
+                consultantSales
+            });
+        }
+
+        // 3. Transformar para o formato que o gráfico espera (Series)
+        // Precisamos dos nomes
+        const allProducts = await prisma.product.findMany({ where: { active: true }, select: { id: true, name: true } });
+        const allUsers = await prisma.user.findMany({
+            where: {
+                deleted_at: null,
+                ...(baseWhere.store_id ? { store_id: baseWhere.store_id } : {})
+            },
+            select: { id: true, name: true }
+        });
+
+        const productEvolution = monthsData.map(m => {
+            const entry: any = { month: m.month };
+            allProducts.forEach(p => {
+                const sale = m.productSales.find(s => s.product_id === p.id);
+                entry[p.name] = sale?._sum?.contract_value || 0;
+            });
+            return entry;
+        });
+
+        const consultantEvolution = monthsData.map(m => {
+            const entry: any = { month: m.month };
+            allUsers.forEach(u => {
+                const sale = m.consultantSales.find(s => s.user_id === u.id);
+                entry[u.name] = sale?._sum?.contract_value || 0;
+            });
+            return entry;
+        });
+
+        return {
+            products: productEvolution,
+            consultants: consultantEvolution,
+            productNames: allProducts.map(p => p.name),
+            consultantNames: allUsers.map(u => u.name)
+        };
+    }
 }

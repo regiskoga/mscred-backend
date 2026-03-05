@@ -16,18 +16,20 @@ export class DashboardController {
         const { month, year, consultantId, targetStoreId } = querySchema.parse(request.query);
 
         try {
-            const [workingDays, financialTotals, goalsProgress, salesByProduct] = await Promise.all([
+            const [workingDays, financialTotals, goalsProgress, salesByProduct, monthlyEvolution] = await Promise.all([
                 dashboardService.getWorkingDaysMetrics(month, year),
                 dashboardService.getFinancialTotals(userId, role, storeId, month, year, consultantId, targetStoreId),
                 dashboardService.getGoalsProgress(userId, role, storeId, month, year, consultantId, targetStoreId),
-                dashboardService.getSalesByProduct(userId, role, storeId, month, year, consultantId, targetStoreId)
+                dashboardService.getSalesByProduct(userId, role, storeId, month, year, consultantId, targetStoreId),
+                dashboardService.getMonthlyEvolution(userId, role, storeId, targetStoreId)
             ]);
 
             return reply.send({
                 workingDays,
                 financialTotals,
                 goalsProgress,
-                salesByProduct
+                salesByProduct,
+                monthlyEvolution
             });
         } catch (error: any) {
             request.log.error(error);
