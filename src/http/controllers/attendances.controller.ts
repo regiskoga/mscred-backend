@@ -135,10 +135,10 @@ export async function listAttendances(request: FastifyRequest, reply: FastifyRep
         prisma.attendance.findMany({
             where: queryFilter,
             include: {
-                product: { select: { name: true } },
-                operation_type: { select: { name: true } },
-                attendance_status: { select: { name: true } },
-                sales_channel: { select: { name: true } },
+                product: { select: { id: true, name: true } },
+                operation_type: { select: { id: true, name: true } },
+                attendance_status: { select: { id: true, name: true } },
+                sales_channel: { select: { id: true, name: true } },
                 user: { select: { name: true } },
                 store: { select: { name: true } },
             },
