@@ -221,4 +221,67 @@ export class DashboardService {
 
         return progressResults;
     }
+
+    /**
+     * Retorna o resumo de vendas agrupado por produto (Soma de Valor e Contagem)
+     */
+    async getSalesByProduct(userId: string, role: string, storeId: number | null, paramMonth?: number, paramYear?: number, targetUserId?: string, targetStoreId?: number) {
+        const now = new Date();
+        const year = paramYear || now.getFullYear();
+        const month = paramMonth ? paramMonth - 1 : now.getMonth();
+
+        const firstDayOfMonth = new Date(year, month, 1);
+        const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
+        // RBAC Filter
+        const whereClause: any = {
+            attendance_date: {
+                gte: firstDayOfMonth,
+                lte: lastDayOfMonth
+            }
+        };
+
+        if (targetUserId) {
+            whereClause.user_id = targetUserId;
+        } else if (targetStoreId) {
+            whereClause.store_id = targetStoreId;
+        } else {
+            if (role === 'OPERADOR') {
+                whereClause.user_id = userId;
+            } else if (role === 'GESTOR' && storeId) {
+                whereClause.store_id = storeId;
+            }
+        }
+
+        // 1. Buscar todos os produtos ativos para garantir que apareçam na lista (mesmo com zero)
+        const products = await prisma.product.findMany({
+            where: { active: true },
+            select: { id: true, name: true }
+        });
+
+        // 2. Agrupar Atendimentos Pagos/Aprovados por Produto
+        const salesData = await prisma.attendance.groupBy({
+            by: ['product_id'],
+            _sum: { contract_value: true },
+            _count: { id: true },
+            where: {
+                ...whereClause,
+                paid_approved: true // Contar apenas o que foi efetivado
+            }
+        });
+
+        // 3. Mesclar dados
+        const result = products.map(product => {
+            const data = salesData.find(s => s.product_id === product.id);
+            return {
+                productId: product.id,
+                productName: product.name,
+                totalValue: data?._sum?.contract_value || 0,
+                count: data?._count?.id || 0
+            };
+        });
+
+        // Ordenar por valor total (ou nome)
+        return result.sort((a, b) => b.totalValue - a.totalValue);
+    }
 }
