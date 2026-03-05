@@ -11,9 +11,10 @@ export async function create(request: FastifyRequest, reply: FastifyReply) {
         role_id: z.number().int(),
         // store_id should only be handled if the role is operator/gestor
         store_id: z.number().int().optional(),
+        google_sheet_id: z.string().optional().nullable(),
     });
 
-    const { name, email, password, role_id, store_id } = registerBodySchema.parse(
+    const { name, email, password, role_id, store_id, google_sheet_id } = registerBodySchema.parse(
         request.body
     );
 
@@ -36,6 +37,7 @@ export async function create(request: FastifyRequest, reply: FastifyReply) {
             password_hash,
             role_id,
             store_id,
+            google_sheet_id,
         },
     });
 
@@ -57,26 +59,45 @@ export async function listUsers(request: FastifyRequest, reply: FastifyReply) {
 
     const users = await prisma.user.findMany({
         where: queryFilter,
-        select: { id: true, name: true, email: true, role: true, store: true, created_at: true }
+        select: { id: true, name: true, email: true, role: true, store: true, created_at: true, google_sheet_id: true }
     });
 
     return reply.send({ users });
 }
 
-export async function updateUserRole(request: FastifyRequest, reply: FastifyReply) {
+export async function update(request: FastifyRequest, reply: FastifyReply) {
     const paramsSchema = z.object({ id: z.string().uuid() });
-    const bodySchema = z.object({ role_id: z.number().int() });
+    const bodySchema = z.object({
+        name: z.string().min(3).optional(),
+        email: z.string().email().optional(),
+        role_id: z.number().int().optional(),
+        store_id: z.number().int().nullable().optional(),
+        google_sheet_id: z.string().nullable().optional(),
+    });
 
     const { id } = paramsSchema.parse(request.params);
-    const { role_id } = bodySchema.parse(request.body);
+    const data = bodySchema.parse(request.body);
+
+    if (data.email) {
+        const userWithSameEmail = await prisma.user.findFirst({
+            where: {
+                email: data.email,
+                id: { not: id }
+            },
+        });
+
+        if (userWithSameEmail) {
+            return reply.status(409).send({ message: 'E-mail já está em uso por outro usuário.' });
+        }
+    }
 
     const updatedUser = await prisma.user.update({
         where: { id },
-        data: { role_id },
-        select: { id: true, email: true, role: true }
+        data,
+        select: { id: true, name: true, email: true, role: true, store: true, google_sheet_id: true }
     });
 
-    return reply.send({ message: 'Cargo atualizado com sucesso.', user: updatedUser });
+    return reply.send({ message: 'Usuário atualizado com sucesso.', user: updatedUser });
 }
 
 export async function deleteUser(request: FastifyRequest, reply: FastifyReply) {
