@@ -326,3 +326,35 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
         return reply.status(500).send({ message: `Erro no sincronismo: ${error.message}` });
     }
 }
+
+export async function clearGoogleSheetsSync(request: FastifyRequest, reply: FastifyReply) {
+    const paramsSchema = z.object({
+        user_id: z.string().uuid(),
+    });
+    const { user_id } = paramsSchema.parse(request.params);
+
+    try {
+        const result = await prisma.attendance.deleteMany({
+            where: {
+                user_id,
+                external_id: { not: null } // Apaga apenas os importados via Planilha
+            }
+        });
+
+        // Audit Trail
+        await prisma.auditLog.create({
+            data: {
+                user_id,
+                action: 'DELETE',
+                table_name: 'attendances',
+                record_id: 'bulk_clear_google_sheets',
+                new_payload: { deleted_count: result.count },
+                ip_address: request.ip,
+            },
+        });
+
+        return reply.send({ message: `${result.count} atendimentos importados foram excluídos com sucesso. Você já pode sincronizar novamente.` });
+    } catch (error: any) {
+        return reply.status(500).send({ message: `Erro ao limpar sincronização: ${error.message}` });
+    }
+}
