@@ -15,9 +15,11 @@ export const app = fastify({
     logger: true, // JSON Logger (Struktured) conforme GLOBAL_GUIDELINES
 });
 
-// Registrar CORS (SecOps: Restringir isso em Produção)
+// Registrar CORS (SecOps: Diretriz Zero-Trust e Prevenção OWASP)
+// RESTRIÇÃO COMPLETA: NUNCA usar origin: true indiscriminadamente em produção.
 app.register(cors, {
-    origin: true,
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : (process.env.NODE_ENV === 'production' ? false : true),
+    credentials: true, // Habilitar suportes a cookies de sessão/auth futura
 });
 
 // Configuração JWT (A Chave será injetada por variável de ambiente para mitigar Zero-Trust Hardcoding)
