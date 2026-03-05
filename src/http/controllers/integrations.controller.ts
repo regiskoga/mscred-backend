@@ -113,7 +113,6 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
             mappedColumns: {} as any // Telemetria para o usuário
         };
 
-        // Normalize Headers (lowercase, no accents)
         const normalize = (str: string) => str.trim().replace(/^"|"$/g, '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
         let headerRowIndex = -1;
@@ -122,26 +121,30 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
         for (let i = 0; i < Math.min(rows.length, 100); i++) {
             const currentHeaders = rows[i].map(normalize);
 
-            const getColIndex = (possibleNames: string[]) => {
+            const getColIndex = (possibleNames: string[], exact = false) => {
+                if (exact) return currentHeaders.findIndex(h => possibleNames.some(name => h === normalize(name)));
                 return currentHeaders.findIndex(h => possibleNames.some(name => h.includes(normalize(name))));
             };
 
-            const tempIdxName = getColIndex(['nome', 'cliente', 'customer']);
-            const tempIdxCpf = getColIndex(['cpf', 'documento']);
+            // Mapeamento baseado no screenshot do usuário
+            const tempIdxName = getColIndex(['nome'], true);
+            const tempIdxCpf = getColIndex(['cpf'], true);
 
             if (tempIdxName !== -1 && tempIdxCpf !== -1) {
                 headerRowIndex = i;
                 idxName = tempIdxName;
                 idxCpf = tempIdxCpf;
-                idxDate = getColIndex(['data', 'date']);
-                idxProduct = getColIndex(['produto', 'product']);
-                idxType = getColIndex(['tipo', 'operacao', 'type']);
-                idxStatus = getColIndex(['status', 'situacao', 'situação', 'pagamento', 'estado']);
-                idxChannel = getColIndex(['canal', 'channel']);
-                idxCity = getColIndex(['cidade', 'city', 'local']);
-                idxBank = getColIndex(['banco', 'bank', 'origem']);
-                // Expandido com termos comuns em planilhas de crédito/finanças
-                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto', 'producao', 'montante', 'bruto', 'financiado', 'liberado', 'vlr', 'vl', 'principal', 'receita']);
+                idxDate = getColIndex(['data'], true);
+                idxProduct = getColIndex(['produto'], true);
+                idxType = getColIndex(['tipo'], true);
+                idxStatus = getColIndex(['status'], true); // Coluna "STATUS" (onde diz PAGO ou ANÁLISE)
+                idxChannel = getColIndex(['canal venda'], true);
+
+                // Mapeamento de VALOR: Na planilha do usuário, a coluna "PAGO APROVADO" contém os valores monetários.
+                idxValue = getColIndex(['pago aprovado'], true);
+                if (idxValue === -1) {
+                    idxValue = getColIndex(['valor', 'contrato', 'bruto', 'montante']);
+                }
 
                 stats.mappedColumns = {
                     nome: idxName !== -1,
