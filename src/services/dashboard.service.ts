@@ -203,13 +203,15 @@ export class DashboardService {
 
             const activeTier = currentTiers.find((t: any) => actualSales >= t.min_value);
 
+            const percentageAchieved = goal.target > 0 ? Math.min(100, (actualSales / goal.target) * 100) : 0;
+
             progressResults.push({
                 productId: goal.product_id,
-                productName: goal.product.name,
+                productName: goal.product?.name || 'Produto Não Identificado',
                 target: goal.target,
                 actualSales: Number(actualSales.toFixed(2)),
                 remainingToGoal: remainingToGoal > 0 ? Number(remainingToGoal.toFixed(2)) : 0,
-                percentageAchieved: Math.min(100, (actualSales / goal.target) * 100),
+                percentageAchieved: Number(percentageAchieved.toFixed(2)),
                 currentTierPercentage: activeTier ? activeTier.percentage : 0,
             });
         }
