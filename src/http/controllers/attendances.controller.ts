@@ -1,6 +1,9 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
+import { CommissionEngineService } from '../../services/commission-engine.service';
+
+const commissionEngine = new CommissionEngineService();
 
 export async function createAttendance(request: FastifyRequest, reply: FastifyReply) {
     const attendanceBodySchema = z.object({
@@ -14,6 +17,7 @@ export async function createAttendance(request: FastifyRequest, reply: FastifyRe
         paid_approved: z.boolean().default(false),
         city: z.string(),
         origin_bank: z.string().optional().nullable(),
+        contract_value: z.number().min(0).optional().default(0),
     });
 
     const parsedData = attendanceBodySchema.parse(request.body);
@@ -23,9 +27,21 @@ export async function createAttendance(request: FastifyRequest, reply: FastifyRe
         return reply.status(403).send({ message: 'Operação abortada: Colaborador sem loja vinculada.' });
     }
 
+    // Calcular o valor do contrato que foi recebido (Supondo que venha no payload. Adicionando ao Schema!)
+    const contract_value = parsedData.contract_value || 0;
+
+    // Motor de Comissões: Avaliar Faixas (Tiers)
+    const commission_value = await commissionEngine.calculateCommission(
+        user_id,
+        parsedData.product_id,
+        contract_value,
+        parsedData.attendance_date
+    );
+
     const attendance = await prisma.attendance.create({
         data: {
-            ...parsedData,
+            ...parsedData, // Injecta parsedData, incluindo contract_value
+            commission_value, // Injetado pela Engine Zero-Trust (não permite manipular no frontend)
             user_id, // Atribuição Indissociável (Zero-Trust) baseada no JWT, não no Body
             store_id, // Vinculação forçada pela loja do colaborador logado
         },
