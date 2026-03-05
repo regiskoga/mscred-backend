@@ -70,7 +70,10 @@ export class DashboardService {
     /**
      * Busca os totais financeiros (Comissionamento e Contratos Aprovados e Pagos) do mês
      */
-    async getFinancialTotals(userId: string, role: string, storeId: number | null, paramMonth?: number, paramYear?: number) {
+    /**
+     * Busca os totais financeiros (Comissionamento e Contratos Aprovados e Pagos) do mês
+     */
+    async getFinancialTotals(userId: string, role: string, storeId: number | null, paramMonth?: number, paramYear?: number, targetUserId?: string, targetStoreId?: number) {
         const now = new Date();
         const year = paramYear || now.getFullYear();
         const month = paramMonth ? paramMonth - 1 : now.getMonth();
@@ -86,12 +89,20 @@ export class DashboardService {
             }
         };
 
-        if (role === 'OPERADOR') {
-            whereClause.user_id = userId;
-        } else if (role === 'GESTOR' && storeId) {
-            whereClause.store_id = storeId;
+        // Prioridade 1: Filtro explícito (Admin/Gestor selecionou alguém)
+        if (targetUserId) {
+            whereClause.user_id = targetUserId;
+        } else if (targetStoreId) {
+            whereClause.store_id = targetStoreId;
         }
-        // ADMIN não tem filtro adicional, pega tudo.
+        // Prioridade 2: Filtro por Role (Caso não tenha filtro explícito)
+        else {
+            if (role === 'OPERADOR') {
+                whereClause.user_id = userId;
+            } else if (role === 'GESTOR' && storeId) {
+                whereClause.store_id = storeId;
+            }
+        }
 
         const comissionAgg = await prisma.attendance.aggregate({
             _sum: { commission_value: true },
@@ -112,28 +123,25 @@ export class DashboardService {
         const paidApprovedValue = paidApprovedAgg._sum && (paidApprovedAgg._sum as any).contract_value
             ? (paidApprovedAgg._sum as any).contract_value : 0;
 
-        const totalRecords = await prisma.attendance.count();
-
         return {
             currentCommission: Number(commissionValue.toFixed(2)),
             paidApproved: Number(paidApprovedValue.toFixed(2)),
-            totalRecords // Telemetria para depuração
         };
     }
 
     /**
      * Compara as Metas configuradas x as Vendas Realizadas do Consultor no mês
      */
-    async getGoalsProgress(userId: string, role: string, storeId: number | null, paramMonth?: number, paramYear?: number) {
+    async getGoalsProgress(userId: string, role: string, storeId: number | null, paramMonth?: number, paramYear?: number, targetUserId?: string, targetStoreId?: number) {
         const now = new Date();
         const year = paramYear || now.getFullYear();
         const monthIndex = paramMonth ? paramMonth - 1 : now.getMonth();
-        const monthDB = monthIndex + 1; // Prisma mês = 1 a 12
+        const monthDB = monthIndex + 1;
 
         const firstDayOfMonth = new Date(year, monthIndex, 1);
         const lastDayOfMonth = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
 
-        // RBAC Filter para Vendas Realizadas
+        // Define quem é o "sujeito" da meta (Para saber quais vendas contar)
         const baseWhere: any = {
             attendance_date: {
                 gte: firstDayOfMonth,
@@ -141,20 +149,20 @@ export class DashboardService {
             }
         };
 
-        if (role === 'OPERADOR') {
-            baseWhere.user_id = userId;
-        } else if (role === 'GESTOR' && storeId) {
-            baseWhere.store_id = storeId;
-        }
+        let effectiveUserId = targetUserId || (role === 'OPERADOR' ? userId : null);
+        let effectiveStoreId = targetStoreId || (role === 'GESTOR' ? storeId : null);
 
-        // 1. Encontrar todas as metas deste mês (Priorizando as específicas do perfil)
+        if (effectiveUserId) baseWhere.user_id = effectiveUserId;
+        else if (effectiveStoreId) baseWhere.store_id = effectiveStoreId;
+
+        // 1. Encontrar métricas aplicáveis ao contexto
         const allPossibleGoals = await prisma.goal.findMany({
             where: {
                 month: monthDB,
                 year,
                 OR: [
-                    { user_id: userId },
-                    { store_id: storeId, user_id: null },
+                    { user_id: effectiveUserId || userId },
+                    { store_id: effectiveStoreId || storeId, user_id: null },
                     { store_id: null, user_id: null }
                 ]
             },
@@ -163,7 +171,6 @@ export class DashboardService {
             }
         });
 
-        // Filtrar a meta mais específica por produto (Usuário > Loja > Global)
         const uniqueGoalsByProduct = new Map<number, any>();
         for (const goal of allPossibleGoals) {
             const existing = uniqueGoalsByProduct.get(goal.product_id);
@@ -179,8 +186,6 @@ export class DashboardService {
         }
 
         const goals = Array.from(uniqueGoalsByProduct.values());
-
-        // 2. Para cada Produto na Meta, somar o que o foi vendido (conforme escopo)
         const progressResults = [];
 
         for (const goal of goals) {
@@ -194,16 +199,14 @@ export class DashboardService {
 
             const actualSales = agg._sum && (agg._sum as any).contract_value ? (agg._sum as any).contract_value : 0;
             const remainingToGoal = goal.target - actualSales;
+            const percentageAchieved = goal.target > 0 ? Math.min(100, (actualSales / goal.target) * 100) : 0;
 
-            // Buscar em qual Tier atual o usuário está, para mostrar no Frontend (Ex: "Faixa Ouro (2%)")
             const currentTiers = await prisma.commissionTier.findMany({
                 where: { product_id: goal.product_id },
                 orderBy: { min_value: 'desc' }
             });
 
             const activeTier = currentTiers.find((t: any) => actualSales >= t.min_value);
-
-            const percentageAchieved = goal.target > 0 ? Math.min(100, (actualSales / goal.target) * 100) : 0;
 
             progressResults.push({
                 productId: goal.product_id,

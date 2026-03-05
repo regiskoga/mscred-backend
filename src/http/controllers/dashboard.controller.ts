@@ -9,15 +9,17 @@ export class DashboardController {
 
         const querySchema = z.object({
             month: z.coerce.number().min(1).max(12).optional(),
-            year: z.coerce.number().min(2000).max(2100).optional()
+            year: z.coerce.number().min(2000).max(2100).optional(),
+            consultantId: z.string().uuid().optional(),
+            targetStoreId: z.coerce.number().optional()
         });
-        const { month, year } = querySchema.parse(request.query);
+        const { month, year, consultantId, targetStoreId } = querySchema.parse(request.query);
 
         try {
             const [workingDays, financialTotals, goalsProgress] = await Promise.all([
                 dashboardService.getWorkingDaysMetrics(month, year),
-                dashboardService.getFinancialTotals(userId, role, storeId, month, year),
-                dashboardService.getGoalsProgress(userId, role, storeId, month, year)
+                dashboardService.getFinancialTotals(userId, role, storeId, month, year, consultantId, targetStoreId),
+                dashboardService.getGoalsProgress(userId, role, storeId, month, year, consultantId, targetStoreId)
             ]);
 
             return reply.send({
