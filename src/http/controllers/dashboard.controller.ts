@@ -1,8 +1,6 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { DashboardService } from '../../services/dashboard.service';
 import { z } from 'zod';
-import fs from 'fs';
-import path from 'path';
 
 export class DashboardController {
     async getMetrics(request: FastifyRequest, reply: FastifyReply) {
@@ -21,18 +19,6 @@ export class DashboardController {
                 dashboardService.getFinancialTotals(userId, role, storeId, month, year),
                 dashboardService.getGoalsProgress(userId, role, storeId, month, year)
             ]);
-
-            const debugData = {
-                timestamp: new Date().toISOString(),
-                user: { userId, role, storeId },
-                request: { month, year },
-                response: { workingDays, financialTotals, totalInDB: (financialTotals as any).totalRecords, goalsProgressCount: goalsProgress.length }
-            };
-
-            fs.writeFileSync(
-                'C:/Users/tradr/Documents/antigravity/MSCRED/dashboard_debug.json',
-                JSON.stringify(debugData, null, 2)
-            );
 
             return reply.send({
                 workingDays,
