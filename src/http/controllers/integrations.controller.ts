@@ -134,7 +134,7 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
                 idxChannel = getColIndex(['canal', 'channel']);
                 idxCity = getColIndex(['cidade', 'city', 'local']);
                 idxBank = getColIndex(['banco', 'bank', 'origem']);
-                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto']);
+                idxValue = getColIndex(['valor', 'value', 'contrato', 'bruto', 'produção', 'producao', 'total', 'r$', 'liberado', 'montante', 'liquido', 'líquido']);
                 break;
             }
         }
@@ -178,13 +178,15 @@ export async function syncGoogleSheets(request: FastifyRequest, reply: FastifyRe
 
             let contract_value = 0;
             if (value_str) {
-                const cleaned = value_str.replace(/[R$\s]/g, '');
-                if (cleaned.includes(',') && cleaned.includes('.')) {
-                    contract_value = parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
-                } else if (cleaned.includes(',')) {
-                    contract_value = parseFloat(cleaned.replace(',', '.'));
+                // Remove R$, espaços, e converte para número
+                const cleaned = value_str.toUpperCase().replace('R$', '').trim();
+                const numStr = cleaned.replace(/\s+/g, ''); // remove espaços no meio
+                if (numStr.includes(',') && numStr.includes('.')) {
+                    contract_value = parseFloat(numStr.replace(/\./g, '').replace(',', '.'));
+                } else if (numStr.includes(',')) {
+                    contract_value = parseFloat(numStr.replace(',', '.'));
                 } else {
-                    contract_value = parseFloat(cleaned);
+                    contract_value = parseFloat(numStr);
                 }
                 if (isNaN(contract_value)) contract_value = 0;
             }
