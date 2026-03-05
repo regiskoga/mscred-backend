@@ -10,7 +10,7 @@ export async function create(request: FastifyRequest, reply: FastifyReply) {
         password: z.string().min(6), // A plain password gets safely hashed below
         role_id: z.number().int(),
         // store_id should only be handled if the role is operator/gestor
-        store_id: z.number().int().optional(),
+        store_id: z.number().int().optional().nullable(),
         google_sheet_id: z.string().optional().nullable(),
     });
 
