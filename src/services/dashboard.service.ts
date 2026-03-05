@@ -289,9 +289,7 @@ export class DashboardService {
      * Retorna a evolução mensal dos últimos 6 meses por Produto e por Colaborador
      */
     async getMonthlyEvolution(userId: string, role: string, storeId: number | null, targetStoreId?: number) {
-        // Apenas Admin e Gestor podem ver evolução. Operator não solicitou (vê o dele?) 
-        // Mas a regra diz: "Admin vê tudo, Gestor vê a loja"
-        if (role === 'OPERADOR') return { products: [], consultants: [] };
+        if (role === 'OPERADOR') return { productEvolution: null, storeEvolution: null, consultantRanking: null };
 
         const monthsData = [];
         const now = new Date();
@@ -304,60 +302,57 @@ export class DashboardService {
             baseWhere.store_id = storeId;
         }
 
-        // 2. Coletar dados dos últimos 6 meses
-        for (let i = 5; i >= 0; i--) {
+        // 2. Coletar dados dos últimos 3 meses
+        for (let i = 2; i >= 0; i--) {
             const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
             const first = new Date(d.getFullYear(), d.getMonth(), 1);
             const last = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
             const monthLabel = d.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
 
-            // Vendas por Produto neste mês
             const productSales = await prisma.attendance.groupBy({
                 by: ['product_id'],
                 _sum: { contract_value: true },
-                where: {
-                    ...baseWhere,
-                    attendance_date: { gte: first, lte: last }
-                }
+                where: { ...baseWhere, attendance_date: { gte: first, lte: last } }
             });
 
-            // Vendas por Consultor neste mês
             const consultantSales = await prisma.attendance.groupBy({
                 by: ['user_id'],
                 _sum: { contract_value: true },
-                where: {
-                    ...baseWhere,
-                    attendance_date: { gte: first, lte: last }
-                }
+                where: { ...baseWhere, attendance_date: { gte: first, lte: last } }
+            });
+
+            const storeSales = await prisma.attendance.groupBy({
+                by: ['store_id'],
+                _sum: { contract_value: true },
+                where: { ...baseWhere, attendance_date: { gte: first, lte: last } }
             });
 
             monthsData.push({
                 month: monthLabel,
-                year: d.getFullYear(),
-                monthIndex: d.getMonth() + 1,
                 productSales,
-                consultantSales
+                consultantSales,
+                storeSales
             });
         }
 
-        // 3. Transformar para o formato que o gráfico espera (Series)
-        // Precisamos dos nomes
+        // 3. Buscar Nomes de Referência
         const allProducts = await prisma.product.findMany({ where: { active: true }, select: { id: true, name: true } });
-
-        // FILTRAR APENAS OPERADORES (Role ID 3 costuma ser OPERADOR, mas vamos buscar pelo nome pra ser Seguro)
         const operatorRole = await prisma.role.findFirst({ where: { name: 'OPERADOR' } });
-
         const allUsers = await prisma.user.findMany({
             where: {
                 deleted_at: null,
-                role_id: operatorRole?.id, // FILTRO SOLICITADO: APENAS OPERADORES
+                role_id: operatorRole?.id,
                 ...(baseWhere.store_id ? { store_id: baseWhere.store_id } : {})
             },
             select: { id: true, name: true }
         });
+        const allStores = await prisma.store.findMany({
+            where: baseWhere.store_id ? { id: baseWhere.store_id } : {},
+            select: { id: true, name: true }
+        });
 
-        // 4. Mapear evolução de produtos e identificar os que tem dados
-        const productEvolution = monthsData.map(m => {
+        // 4. Evolução de Produtos (3 meses)
+        const productSeries = monthsData.map(m => {
             const entry: any = { month: m.month };
             allProducts.forEach(p => {
                 const sale = m.productSales.find(s => s.product_id === p.id);
@@ -365,32 +360,40 @@ export class DashboardService {
             });
             return entry;
         });
-
-        // Limpeza: Manter apenas produtos que tiveram pelo menos uma venda no período de 6 meses
         const activeProductNames = allProducts
-            .filter(p => productEvolution.some(entry => entry[p.name] > 0))
+            .filter(p => productSeries.some(entry => entry[p.name] > 0))
             .map(p => p.name);
 
-        // 5. Mapear evolução de consultores e identificar os que tem dados
-        const consultantEvolution = monthsData.map(m => {
+        // 5. Evolução de Lojas (3 meses)
+        const storeSeries = monthsData.map(m => {
             const entry: any = { month: m.month };
-            allUsers.forEach(u => {
-                const sale = m.consultantSales.find(s => s.user_id === u.id);
-                entry[u.name] = sale?._sum?.contract_value || 0;
+            allStores.forEach(s => {
+                const sale = m.storeSales.find(ss => ss.store_id === s.id);
+                entry[s.name] = sale?._sum?.contract_value || 0;
             });
             return entry;
         });
+        const activeStoreNames = allStores
+            .filter(s => storeSeries.some(entry => entry[s.name] > 0))
+            .map(s => s.name);
 
-        // Limpeza: Manter apenas consultores que tiveram pelo menos uma venda no período
-        const activeConsultantNames = allUsers
-            .filter(u => consultantEvolution.some(entry => entry[u.name] > 0))
-            .map(u => u.name);
+        // 6. Ranking de Consultores (Mês Atual)
+        const currentMonthData = monthsData[monthsData.length - 1];
+        const ranking = allUsers.map(u => {
+            const sale = currentMonthData.consultantSales.find(s => s.user_id === u.id);
+            return {
+                name: u.name,
+                value: sale?._sum?.contract_value || 0
+            };
+        })
+            .filter(u => u.value > 0)
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 10);
 
         return {
-            products: productEvolution,
-            consultants: consultantEvolution,
-            productNames: activeProductNames,
-            consultantNames: activeConsultantNames
+            productEvolution: { series: productSeries, names: activeProductNames },
+            storeEvolution: { series: storeSeries, names: activeStoreNames },
+            consultantRanking: ranking
         };
     }
 }
