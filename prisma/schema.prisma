@@ -16,6 +16,7 @@ model Product {
   id               Int              @id @default(autoincrement())
   name             String           @unique
   active           Boolean          @default(true)
+  sort_order       Int              @default(0)
   created_at       DateTime         @default(now())
   updated_at       DateTime         @updatedAt
   

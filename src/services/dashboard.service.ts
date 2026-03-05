@@ -256,7 +256,11 @@ export class DashboardService {
         // 1. Buscar todos os produtos ativos para garantir que apareçam na lista (mesmo com zero)
         const products = await prisma.product.findMany({
             where: { active: true },
-            select: { id: true, name: true }
+            select: { id: true, name: true, sort_order: true },
+            orderBy: [
+                { sort_order: 'asc' },
+                { name: 'asc' }
+            ]
         });
 
         // 2. Agrupar Atendimentos Pagos/Aprovados por Produto
@@ -282,7 +286,8 @@ export class DashboardService {
         });
 
         // Ordenar por valor total (ou nome)
-        return result.sort((a, b) => b.totalValue - a.totalValue);
+        // Ordenar pela ordem definida (e nome como fallback)
+        return result; // Já vem ordenado do findMany na linha 257
     }
 
     /**
@@ -336,7 +341,14 @@ export class DashboardService {
         }
 
         // 3. Buscar Nomes de Referência
-        const allProducts = await prisma.product.findMany({ where: { active: true }, select: { id: true, name: true } });
+        const allProducts = await prisma.product.findMany({
+            where: { active: true },
+            select: { id: true, name: true, sort_order: true },
+            orderBy: [
+                { sort_order: 'asc' },
+                { name: 'asc' }
+            ]
+        });
         const operatorRole = await prisma.role.findFirst({ where: { name: 'OPERADOR' } });
         const allUsers = await prisma.user.findMany({
             where: {

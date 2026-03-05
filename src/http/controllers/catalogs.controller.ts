@@ -3,7 +3,13 @@ import { prisma } from '../../lib/prisma';
 import { z } from 'zod';
 
 export async function getAllProducts(request: FastifyRequest, reply: FastifyReply) {
-    const products = await prisma.product.findMany({ where: { active: true } });
+    const products = await prisma.product.findMany({
+        where: { active: true },
+        orderBy: [
+            { sort_order: 'asc' },
+            { name: 'asc' }
+        ]
+    });
     return reply.send({ products });
 }
 
@@ -28,17 +34,20 @@ export async function createCatalogItem(request: FastifyRequest, reply: FastifyR
         type: z.enum(['products', 'operation_types', 'attendance_statuses', 'sales_channels'])
     });
     const bodySchema = z.object({
-        name: z.string().min(2)
+        name: z.string().min(2),
+        sort_order: z.number().int().optional()
     });
 
     const { type } = paramsSchema.parse(request.params);
-    const { name } = bodySchema.parse(request.body);
+    const { name, sort_order } = bodySchema.parse(request.body);
 
     let createdRecord;
     // Map of Prisma delegates dynamically
     switch (type) {
         case 'products':
-            createdRecord = await prisma.product.create({ data: { name } });
+            createdRecord = await prisma.product.create({
+                data: { name, sort_order: sort_order || 0 }
+            });
             break;
         case 'operation_types':
             createdRecord = await prisma.operationType.create({ data: { name } });
@@ -60,25 +69,32 @@ export async function updateCatalogItem(request: FastifyRequest, reply: FastifyR
         id: z.coerce.number()
     });
     const bodySchema = z.object({
-        name: z.string().min(2)
+        name: z.string().min(2).optional(),
+        sort_order: z.number().int().optional()
     });
 
     const { type, id } = paramsSchema.parse(request.params);
-    const { name } = bodySchema.parse(request.body);
+    const { name, sort_order } = bodySchema.parse(request.body);
 
     let updatedRecord;
     switch (type) {
         case 'products':
-            updatedRecord = await prisma.product.update({ where: { id }, data: { name } });
+            updatedRecord = await prisma.product.update({
+                where: { id },
+                data: {
+                    ...(name ? { name } : {}),
+                    ...(sort_order !== undefined ? { sort_order } : {})
+                }
+            });
             break;
         case 'operation_types':
-            updatedRecord = await prisma.operationType.update({ where: { id }, data: { name } });
+            updatedRecord = await prisma.operationType.update({ where: { id }, data: { name: name! } });
             break;
         case 'attendance_statuses':
-            updatedRecord = await prisma.attendanceStatus.update({ where: { id }, data: { name } });
+            updatedRecord = await prisma.attendanceStatus.update({ where: { id }, data: { name: name! } });
             break;
         case 'sales_channels':
-            updatedRecord = await prisma.salesChannel.update({ where: { id }, data: { name } });
+            updatedRecord = await prisma.salesChannel.update({ where: { id }, data: { name: name! } });
             break;
     }
 
