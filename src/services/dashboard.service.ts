@@ -229,31 +229,39 @@ export class DashboardService {
         const now = new Date();
         const year = paramYear || now.getFullYear();
         const month = paramMonth ? paramMonth - 1 : now.getMonth();
+        const monthDB = month + 1;
 
         const firstDayOfMonth = new Date(year, month, 1);
         const lastDayOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
+        // 1. Obter métricas de dias úteis para os cálculos
+        const workingDays = await this.getWorkingDaysMetrics(monthDB, year);
+
         // RBAC Filter
-        const whereClause: any = {
+        const dataWhere: any = {
             attendance_date: {
                 gte: firstDayOfMonth,
                 lte: lastDayOfMonth
             }
         };
 
+        // Escopo efetivo para busca de metas
+        let effectiveUserId = targetUserId || (role === 'OPERADOR' ? userId : null);
+        let effectiveStoreId = targetStoreId || (role === 'GESTOR' ? storeId : null);
+
         if (targetUserId) {
-            whereClause.user_id = targetUserId;
+            dataWhere.user_id = targetUserId;
         } else if (targetStoreId) {
-            whereClause.store_id = targetStoreId;
+            dataWhere.store_id = targetStoreId;
         } else {
             if (role === 'OPERADOR') {
-                whereClause.user_id = userId;
+                dataWhere.user_id = userId;
             } else if (role === 'GESTOR' && storeId) {
-                whereClause.store_id = storeId;
+                dataWhere.store_id = storeId;
             }
         }
 
-        // 1. Buscar todos os produtos ativos para garantir que apareçam na lista (mesmo com zero)
+        // 1. Buscar todos os produtos ativos
         const products = await prisma.product.findMany({
             where: { active: true },
             select: { id: true, name: true, sort_order: true },
@@ -269,25 +277,74 @@ export class DashboardService {
             _sum: { contract_value: true },
             _count: { id: true },
             where: {
-                ...whereClause,
-                paid_approved: true // Contar apenas o que foi efetivado
+                ...dataWhere,
+                paid_approved: true
             }
         });
 
-        // 3. Mesclar dados
+        // 3. Buscar TODAS as metas possíveis para este período
+        const allPossibleGoals = await prisma.goal.findMany({
+            where: {
+                month: monthDB,
+                year,
+                OR: [
+                    { user_id: effectiveUserId || userId },
+                    { store_id: effectiveStoreId || storeId, user_id: null },
+                    { store_id: null, user_id: null }
+                ]
+            }
+        });
+
+        // 4. Mesclar dados com lógica de precedência de metas e cálculos de projeção
         const result = products.map(product => {
-            const data = salesData.find(s => s.product_id === product.id);
+            const sale = salesData.find(s => s.product_id === product.id);
+            const actualSales = Number(sale?._sum?.contract_value || 0);
+            const count = sale?._count?.id || 0;
+
+            // Encontrar a melhor meta para este produto (User > Store > Global)
+            const productGoals = allPossibleGoals.filter(g => g.product_id === product.id);
+            let target = 0;
+            if (productGoals.length > 0) {
+                const bestGoal = productGoals.reduce((prev, curr) => {
+                    const prevScore = (prev.user_id ? 3 : (prev.store_id ? 2 : 1));
+                    const currScore = (curr.user_id ? 3 : (curr.store_id ? 2 : 1));
+                    return currScore > prevScore ? curr : prev;
+                });
+                target = Number(bestGoal.target);
+            }
+
+            // Cálculos de Performance
+            const percentageAchieved = target > 0 ? (actualSales / target) * 100 : 0;
+
+            // Projeção baseada em dias úteis
+            // Se o mês já passou (elapsed == total), projeção é o valor atual
+            let projection = actualSales;
+            let projectionPercentage = percentageAchieved;
+
+            if (workingDays.elapsed > 0 && workingDays.elapsed < workingDays.total) {
+                projection = (actualSales / workingDays.elapsed) * workingDays.total;
+                projectionPercentage = target > 0 ? (projection / target) * 100 : 0;
+            }
+
+            // Ideal Hoje e Saldo
+            const idealToday = workingDays.total > 0 ? (target / workingDays.total) * workingDays.elapsed : 0;
+            const balance = actualSales - idealToday;
+
             return {
                 productId: product.id,
                 productName: product.name,
-                totalValue: data?._sum?.contract_value || 0,
-                count: data?._count?.id || 0
+                totalValue: Number(actualSales.toFixed(2)),
+                count,
+                target: Number(target.toFixed(2)),
+                percentageAchieved: Number(percentageAchieved.toFixed(2)),
+                projection: Number(projection.toFixed(2)),
+                projectionPercentage: Number(projectionPercentage.toFixed(2)),
+                idealToday: Number(idealToday.toFixed(2)),
+                balance: Number(balance.toFixed(2))
             };
         });
 
-        // Ordenar por valor total (ou nome)
-        // Ordenar pela ordem definida (e nome como fallback)
-        return result; // Já vem ordenado do findMany na linha 257
+        return result;
     }
 
     /**
